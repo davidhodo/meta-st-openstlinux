@@ -25,6 +25,7 @@ import subprocess
 import random
 import math
 import os
+import sys
 import glob
 import socket
 import fcntl
@@ -51,8 +52,34 @@ if SIMULATE > 0:
 else:
     DEMO_PATH = "/usr/local/demo"
 
+
+# -------------------------------------------------------------------
+# Managment of lock file to have only excution of this script as same time
 lock = threading.Lock()
 
+lock_handle = None
+lock_file_path = '/tmp/demo_launcher.lock'
+
+def file_is_locked(file_path):
+    global lock_handle
+    lock_handle= open(file_path, 'w')
+    try:
+        fcntl.lockf(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return False
+    except IOError:
+        return True
+
+def file_lock_remove(file_path):
+    try:
+        os.remove(lock_file_path)
+    except Exception as exc:
+        print("Signal handler Exception: ", exc)
+
+# -------------------------------------------------------------------
+# -------------------------------------------------------------------
+def detroy_quit_application(widget):
+    file_lock_remove(lock_file_path)
+    Gtk.main_quit()
 # -------------------------------------------------------------------
 # -------------------------------------------------------------------
 # CONSTANT VALUES
@@ -546,7 +573,7 @@ class MainUIWindow(Gtk.Window):
         self.set_default_size(self.screen_width, self.screen_height)
         print("[DEBUG] screen size: %dx%d" % (self.screen_width, self.screen_height))
         self.set_position(Gtk.WindowPosition.CENTER)
-        self.connect('destroy', Gtk.main_quit)
+        self.connect('destroy', detroy_quit_application)
 
         self.previous_click_time=time()
 
@@ -669,7 +696,7 @@ class MainUIWindow(Gtk.Window):
         overlay = Gtk.Overlay()
         overlay.add(self.page_main)
         self.button_exit = Gtk.Button()
-        self.button_exit.connect("clicked", Gtk.main_quit)
+        self.button_exit.connect("clicked", detroy_quit_application)
         self.button_exit_image = _load_image_on_button(self, "%s/pictures/close_70x70_white.png" % DEMO_PATH, "Exit", -1, self.exit_size)
         self.button_exit.set_halign(Gtk.Align.END)
         self.button_exit.set_valign(Gtk.Align.START)
@@ -791,19 +818,12 @@ class MainUIWindow(Gtk.Window):
         widget.set_name("transparent_bg")
         self.button_exit.show()
 
-# -------------------------------------------------------------------
-# Managment of lock file to have only excution of this script as same time
-lock_handle = None
-lock_file_path = '/tmp/demo_launcher.lock'
 
-def file_is_locked(file_path):
-    global lock_handle
-    lock_handle= open(file_path, 'w')
-    try:
-        fcntl.lockf(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return False
-    except IOError:
-        return True
+# -------------------------------------------------------------------
+# Signal handler
+def demo_signal_handler(signum, frame):
+    file_lock_remove(lock_file_path)
+    sys.exit(0)
 
 # -------------------------------------------------------------------
 # -------------------------------------------------------------------
@@ -811,7 +831,7 @@ def file_is_locked(file_path):
 if __name__ == "__main__":
     # add signal to catch CRTL+C
     import signal
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, demo_signal_handler)
 
     if file_is_locked(lock_file_path):
         print("[ERROR] another instance is running exiting now\n")
@@ -822,5 +842,5 @@ if __name__ == "__main__":
         win.show_all()
         Gtk.main()
     except Exception as exc:
-        print("Main Exception: ", exc )
+        print("Main Exception: ", exc)
 
